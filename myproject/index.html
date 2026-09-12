@@ -1255,6 +1255,15 @@
 
                     </div>
 
+
+                    <button
+                        type="button"
+                        class="chat-start-button"
+                        onclick="openChatFromRecommendation()"
+                    >
+                        채팅하기
+                    </button>
+
                 </div>
 
 
@@ -1275,6 +1284,88 @@
             >
                 1 / 3
             </p>
+
+        </div>
+
+    </section>
+
+
+    <!-- =========================
+         16. 채팅방
+    ========================== -->
+    <section class="page chat-page" id="page16">
+
+        <div class="chat-shell">
+
+            <header class="chat-header">
+
+                <button
+                    type="button"
+                    class="chat-back-button"
+                    onclick="closeChat()"
+                    aria-label="추천 화면으로 돌아가기"
+                >
+                    ‹
+                </button>
+
+                <div class="chat-header-avatar">
+                    👤
+                </div>
+
+                <div class="chat-header-info">
+
+                    <h2 id="chatPartnerName">
+                        입주자
+                    </h2>
+
+                    <p>
+                        추천 프로필과의 대화
+                    </p>
+
+                </div>
+
+            </header>
+
+
+            <main
+                class="chat-messages"
+                id="chatMessages"
+            >
+
+                <div class="chat-empty-state" id="chatEmptyState">
+                    <div class="chat-empty-avatar">👤</div>
+                    <strong id="chatEmptyName">입주자</strong>
+                    <span>첫 메시지를 보내 대화를 시작해보세요.</span>
+                </div>
+
+            </main>
+
+
+            <div class="chat-compose">
+
+                <div class="chat-input-wrap">
+
+                    <textarea
+                        id="chatInput"
+                        rows="1"
+                        maxlength="500"
+                        placeholder="메시지를 입력하세요..."
+                        aria-label="채팅 메시지"
+                    ></textarea>
+
+                    <button
+                        type="button"
+                        class="chat-send-button"
+                        id="chatSendButton"
+                        onclick="sendChatMessage()"
+                        disabled
+                    >
+                        전송
+                    </button>
+
+                </div>
+
+            </div>
 
         </div>
 

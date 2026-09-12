@@ -1077,17 +1077,34 @@ function buildMyInput() {
 
     return {
 
-        gender: genderToEn(profileData.gender),
+        gender:
+            genderToEn(
+                profileData.gender
+            ),
 
         preferredGender:
             preferredGenderToArray(
                 profileData.preferredGender
             ),
 
-        age: calculateAge(profileData.birthDate),
+        genderHardFilter:
+            profileData.genderHardFilter,
 
-        ageMin: profileData.preferredAgeMin,
-        ageMax: profileData.preferredAgeMax,
+
+        age:
+            calculateAge(
+                profileData.birthDate
+            ),
+
+        ageMin:
+            profileData.preferredAgeMin,
+
+        ageMax:
+            profileData.preferredAgeMax,
+
+        ageHardFilter:
+            profileData.ageHardFilter,
+
 
         preferredDistricts: [
 
@@ -1097,8 +1114,16 @@ function buildMyInput() {
 
         ].filter(Boolean),
 
-        isSmoking: profileData.smoking,
-        smokingTolerance: profileData.smokingTolerance,
+        regionHardFilter:
+            profileData.regionHardFilter,
+
+
+        isSmoking:
+            profileData.smoking,
+
+        smokingTolerance:
+            profileData.smokingTolerance,
+
 
         sleepRange: [
 
@@ -1107,15 +1132,34 @@ function buildMyInput() {
 
         ],
 
-        noiseLevel: profileData.noiseSensitivity,
-        socialLevel: profileData.socialLevel,
+
+        noiseLevel:
+            profileData.noiseSensitivity,
+
+        socialLevel:
+            profileData.socialLevel,
+
 
         rentRange: [
 
             profileData.budgetMin,
             profileData.budgetMax
 
-        ]
+        ],
+
+        budgetHardFilter:
+            profileData.budgetHardFilter,
+
+
+        stayRange: [
+
+            profileData.stayMin,
+            profileData.stayMax
+
+        ],
+
+        stayHardFilter:
+            profileData.stayHardFilter
 
     };
 }
@@ -1174,19 +1218,9 @@ function finishSurvey() {
         getMatches(myInput, priorities, seedUsers);
 
 
-    // gender/age/region은 matching.js에서 항상 하드필터로 처리됨.
-    // budget/stay는 matching.js가 소프트로만 처리하므로, 체크박스가
-    // 켜져 있으면 여기서 추가로 걸러낸다.
-    if (profileData.budgetHardFilter) {
-
-        results =
-            results.filter(
-                (result) => result.breakdown.budget === 100
-            );
-
-    }
-
-
+    // 성별/나이/지역/흡연/예산 하드필터는 matching.js에 전달된다.
+    // 거주기간은 seedUsers가 stayDuration 단일 값 구조이므로
+    // 아래에서 기존 방식으로 추가 필터링한다.
     if (profileData.stayHardFilter) {
 
         results =
@@ -1409,6 +1443,348 @@ function previousRecommendation() {
 }
 
 
+
+
+// ========================================
+// 채팅
+// ========================================
+
+let activeChatUserId = null;
+
+function getChatStorageKey(userId) {
+    return `nbt-chat-${userId}`;
+}
+
+function getStoredMessages(userId) {
+    try {
+        const saved = localStorage.getItem(
+            getChatStorageKey(userId)
+        );
+
+        if (!saved) {
+            return [];
+        }
+
+        const parsed = JSON.parse(saved);
+
+        return Array.isArray(parsed)
+            ? parsed
+            : [];
+    }
+    catch (error) {
+        console.error(
+            "채팅 기록을 불러오지 못했습니다.",
+            error
+        );
+
+        return [];
+    }
+}
+
+function saveMessages(userId, messages) {
+    try {
+        localStorage.setItem(
+            getChatStorageKey(userId),
+            JSON.stringify(messages)
+        );
+    }
+    catch (error) {
+        console.error(
+            "채팅 기록을 저장하지 못했습니다.",
+            error
+        );
+    }
+}
+
+function getCurrentRecommendedUser() {
+    if (matchResults.length === 0) {
+        return null;
+    }
+
+    const result =
+        matchResults[recommendationIndex];
+
+    return seedUsersById.get(
+        result.userId
+    ) ?? null;
+}
+
+function openChatFromRecommendation() {
+    const user =
+        getCurrentRecommendedUser();
+
+    if (!user) {
+        return;
+    }
+
+    activeChatUserId =
+        user.userId;
+
+    document.getElementById(
+        "chatPartnerName"
+    ).textContent =
+        user.name;
+
+    document.getElementById(
+        "chatEmptyName"
+    ).textContent =
+        user.name;
+
+    renderChatMessages();
+
+    goToPage(16);
+
+    setTimeout(() => {
+        document.getElementById(
+            "chatInput"
+        ).focus();
+    }, 50);
+}
+
+function closeChat() {
+    goToPage(15);
+}
+
+function renderChatMessages() {
+    const container =
+        document.getElementById(
+            "chatMessages"
+        );
+
+    const emptyState =
+        document.getElementById(
+            "chatEmptyState"
+        );
+
+    if (!activeChatUserId) {
+        return;
+    }
+
+    const messages =
+        getStoredMessages(
+            activeChatUserId
+        );
+
+    container
+        .querySelectorAll(
+            ".chat-message-row"
+        )
+        .forEach((element) => {
+            element.remove();
+        });
+
+    emptyState.classList.toggle(
+        "hidden",
+        messages.length > 0
+    );
+
+    messages.forEach((message) => {
+        appendMessageToChat(
+            message,
+            false
+        );
+    });
+
+    requestAnimationFrame(() => {
+        container.scrollTop =
+            container.scrollHeight;
+    });
+}
+
+function appendMessageToChat(
+    message,
+    shouldScroll = true
+) {
+    const container =
+        document.getElementById(
+            "chatMessages"
+        );
+
+    const emptyState =
+        document.getElementById(
+            "chatEmptyState"
+        );
+
+    emptyState.classList.add(
+        "hidden"
+    );
+
+    const row =
+        document.createElement(
+            "div"
+        );
+
+    row.className =
+        "chat-message-row";
+
+    const time =
+        document.createElement(
+            "span"
+        );
+
+    time.className =
+        "chat-message-time";
+
+    time.textContent =
+        message.time;
+
+    const bubble =
+        document.createElement(
+            "div"
+        );
+
+    bubble.className =
+        "chat-message-bubble";
+
+    bubble.textContent =
+        message.text;
+
+    row.appendChild(time);
+    row.appendChild(bubble);
+
+    container.appendChild(row);
+
+    if (shouldScroll) {
+        container.scrollTop =
+            container.scrollHeight;
+    }
+}
+
+function sendChatMessage() {
+    const input =
+        document.getElementById(
+            "chatInput"
+        );
+
+    const text =
+        input.value.trim();
+
+    if (
+        !text
+        ||
+        !activeChatUserId
+    ) {
+        return;
+    }
+
+    const now =
+        new Date();
+
+    const message = {
+        id:
+            `${Date.now()}-${Math.random()
+                .toString(16)
+                .slice(2)}`,
+
+        text,
+
+        time:
+            now.toLocaleTimeString(
+                "ko-KR",
+                {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                }
+            )
+    };
+
+    const messages =
+        getStoredMessages(
+            activeChatUserId
+        );
+
+    messages.push(message);
+
+    saveMessages(
+        activeChatUserId,
+        messages
+    );
+
+    appendMessageToChat(
+        message
+    );
+
+    input.value = "";
+    autoResizeChatInput();
+    updateChatSendButton();
+}
+
+function updateChatSendButton() {
+    const input =
+        document.getElementById(
+            "chatInput"
+        );
+
+    const button =
+        document.getElementById(
+            "chatSendButton"
+        );
+
+    button.disabled =
+        input.value.trim()
+            .length === 0;
+}
+
+function autoResizeChatInput() {
+    const input =
+        document.getElementById(
+            "chatInput"
+        );
+
+    input.style.height = "auto";
+
+    input.style.height =
+        `${Math.min(
+            input.scrollHeight,
+            120
+        )}px`;
+}
+
+const chatInput =
+    document.getElementById(
+        "chatInput"
+    );
+
+chatInput.addEventListener(
+    "input",
+    () => {
+        updateChatSendButton();
+        autoResizeChatInput();
+    }
+);
+
+chatInput.addEventListener(
+    "keydown",
+    (event) => {
+
+        // 한글 IME 조합 중 Enter 입력은 전송으로 처리하지 않음
+        if (
+            event.isComposing
+            ||
+            event.keyCode === 229
+        ) {
+            return;
+        }
+
+        if (
+            event.key === "Enter"
+            &&
+            !event.shiftKey
+        ) {
+            event.preventDefault();
+
+            if (
+                chatInput.value
+                    .trim()
+                    .length > 0
+            ) {
+                sendChatMessage();
+            }
+        }
+    }
+);
+
+
 // ========================================
 // 초기 실행
 // ========================================
@@ -1438,6 +1814,9 @@ Object.assign(window, {
     validateSmokingPreference,
     finishSurvey,
     previousRecommendation,
-    nextRecommendation
+    nextRecommendation,
+    openChatFromRecommendation,
+    closeChat,
+    sendChatMessage
 
 });

@@ -1,55 +1,36 @@
-// Role A — 매칭 알고리즘 (하드 필터 + 소프트 점수 + 가중치)
-// 필드명은 C의 seed 데이터 형식(userId, preferredGender, ageMin/ageMax,
-// isSmoking, sleepRange, noiseLevel, socialLevel 등)에 맞춤.
+// Role A — 매칭 알고리즘
+// 하드 필터 + 소프트 점수 + 가중치
 
-const FIELD_KEYS = ["smoking", "sleep", "social", "noise", "region", "budget"];
-const PRIORITY_WEIGHTS = [25, 20, 15]; // 1~3순위 가중치(%)
+const FIELD_KEYS = [
+  "smoking",
+  "sleep",
+  "social",
+  "noise",
+  "region",
+  "budget",
+];
+
+const PRIORITY_WEIGHTS = [25, 20, 15];
+
+
+// ==============================
+// 공통
+// ==============================
 
 function inRange(value, min, max) {
   return value >= min && value <= max;
 }
 
-function passesHardFilter(a, b) {
-  if (!a.preferredGender.includes(b.gender) || !b.preferredGender.includes(a.gender)) return false;
-  if (!inRange(b.age, a.ageMin, a.ageMax) || !inRange(a.age, b.ageMin, b.ageMax)) return false;
-  if (b.isSmoking && a.smokingTolerance === 0) return false;
-  if (a.isSmoking && b.smokingTolerance === 0) return false;
-  if (regionRawScore(a, b) === 0) return false;
-  return true;
+function harmonicMean(a, b) {
+  if (a === 0 || b === 0) return 0;
+  return (2 * a * b) / (a + b);
 }
 
-function smokingScore(a, b) {
-  const scoreTowards = (viewer, other) => (other.isSmoking ? viewer.smokingTolerance * 25 : 100);
-  return Math.min(scoreTowards(a, b), scoreTowards(b, a));
-}
 
-// [min, max] 범위 두 개의 유사도를 계산하는 공용 함수 (현재는 sleepRange 전용).
-function rangeScore([aMin, aMax], [bMin, bMax]) {
-  const aCenter = (aMin + aMax) / 2;
-  const bCenter = (bMin + bMax) / 2;
-  const centerScore = Math.max(0, 100 - Math.abs(aCenter - bCenter) * 20);
+// ==============================
+// 지역
+// ==============================
 
-  const overlap = Math.max(0, Math.min(aMax, bMax) - Math.max(aMin, bMin));
-  const union = Math.max(aMax, bMax) - Math.min(aMin, bMin);
-  const overlapScore = union > 0 ? (overlap / union) * 100 : 0;
-
-  return centerScore * 0.5 + overlapScore * 0.5;
-}
-
-// sleepRange는 자정을 넘기면 25(=익일 1시)처럼 24를 넘겨 표기하는 규칙(C의 seed 데이터 규약)이라
-// 값 그대로 rangeScore에 넣으면 됨 — 별도의 자정 보정(shift)이 필요 없음.
-function sleepScore(a, b) {
-  return rangeScore(a.sleepRange, b.sleepRange);
-}
-
-// 교류 희망 정도(socialLevel) / 소음 민감도(noiseLevel, 1~5)의 유사도.
-function levelDiffScore(aValue, bValue) {
-  const diff = Math.abs(aValue - bValue);
-  return 100 - (diff / 4) * 100;
-}
-
-// preferredDistricts는 순서대로 1~3지망. 겹치는 지역 중 가장 점수가 높은
-// (내 순위, 상대 순위) 조합을 채택 — 순서 무관 대칭 점수표, 15점 만점.
 const REGION_SCORE_TABLE = {
   "1-1": 15,
   "1-2": 10,
@@ -61,14 +42,22 @@ const REGION_SCORE_TABLE = {
 
 function regionRawScore(a, b) {
   let best = 0;
+
   a.preferredDistricts.forEach((districtA, i) => {
     b.preferredDistricts.forEach((districtB, j) => {
       if (districtA !== districtB) return;
+
       const ranks = [i + 1, j + 1].sort((x, y) => x - y);
-      const score = REGION_SCORE_TABLE[ranks.join("-")] ?? 0;
-      if (score > best) best = score;
+      const key = ranks.join("-");
+
+      const score = REGION_SCORE_TABLE[key] ?? 0;
+
+      if (score > best) {
+        best = score;
+      }
     });
   });
+
   return best;
 }
 
@@ -76,90 +65,566 @@ function regionScore(a, b) {
   return (regionRawScore(a, b) / 15) * 100;
 }
 
-// 월세(rentRange)가 겹치면 만점. 아니면 격차로 감점(하드필터 없음).
+
+// ==============================
+// 범위 관련
+// ==============================
+
 function rangesOverlap([aMin, aMax], [bMin, bMax]) {
-  return Math.min(aMax, bMax) - Math.max(aMin, bMin) > 0;
+  return Math.min(aMax, bMax) >= Math.max(aMin, bMin);
 }
 
 function rangeGap([aMin, aMax], [bMin, bMax]) {
-  return Math.max(0, Math.max(aMin, bMin) - Math.min(aMax, bMax));
+  return Math.max(
+    0,
+    Math.max(aMin, bMin) - Math.min(aMax, bMax)
+  );
 }
+
+
+// ==============================
+// 하드 필터
+// ==============================
+
+function passesHardFilter(a, b) {
+
+  // --------------------------
+  // 성별
+  // 체크한 경우에만 하드필터
+  // --------------------------
+
+  if (
+    a.genderHardFilter === true &&
+    !a.preferredGender.includes(b.gender)
+  ) {
+    return false;
+  }
+
+  if (
+    b.genderHardFilter === true &&
+    !b.preferredGender.includes(a.gender)
+  ) {
+    return false;
+  }
+
+
+  // --------------------------
+  // 나이
+  // --------------------------
+
+  if (
+    a.ageHardFilter === true &&
+    !inRange(b.age, a.ageMin, a.ageMax)
+  ) {
+    return false;
+  }
+
+  if (
+    b.ageHardFilter === true &&
+    !inRange(a.age, b.ageMin, b.ageMax)
+  ) {
+    return false;
+  }
+
+
+  // --------------------------
+  // 흡연
+  // tolerance 0이면 자동 하드필터
+  // --------------------------
+
+  if (
+    b.isSmoking === true &&
+    a.smokingTolerance === 0
+  ) {
+    return false;
+  }
+
+  if (
+    a.isSmoking === true &&
+    b.smokingTolerance === 0
+  ) {
+    return false;
+  }
+
+
+  // --------------------------
+  // 지역
+  // --------------------------
+
+  const regionMatched =
+    regionRawScore(a, b) > 0;
+
+  if (
+    a.regionHardFilter === true &&
+    !regionMatched
+  ) {
+    return false;
+  }
+
+  if (
+    b.regionHardFilter === true &&
+    !regionMatched
+  ) {
+    return false;
+  }
+
+
+  // --------------------------
+  // 예산
+  // --------------------------
+
+  if (
+    a.budgetHardFilter === true &&
+    !rangesOverlap(a.rentRange, b.rentRange)
+  ) {
+    return false;
+  }
+
+  if (
+    b.budgetHardFilter === true &&
+    !rangesOverlap(a.rentRange, b.rentRange)
+  ) {
+    return false;
+  }
+
+
+  // --------------------------
+  // 거주기간
+  // stayRange가 있을 때만 체크
+  // --------------------------
+
+  if (
+    a.stayHardFilter === true &&
+    a.stayRange &&
+    b.stayRange &&
+    !rangesOverlap(a.stayRange, b.stayRange)
+  ) {
+    return false;
+  }
+
+  if (
+    b.stayHardFilter === true &&
+    a.stayRange &&
+    b.stayRange &&
+    !rangesOverlap(a.stayRange, b.stayRange)
+  ) {
+    return false;
+  }
+
+
+  return true;
+}
+
+
+// ==============================
+// 흡연 점수
+// ==============================
+
+function smokingScore(a, b) {
+
+  const scoreTowards = (viewer, other) => {
+    if (!other.isSmoking) {
+      return 100;
+    }
+
+    return viewer.smokingTolerance * 25;
+  };
+
+  const aToB = scoreTowards(a, b);
+  const bToA = scoreTowards(b, a);
+
+  return harmonicMean(aToB, bToA);
+}
+
+
+// ==============================
+// 수면 점수
+// ==============================
+
+function rangeScore([aMin, aMax], [bMin, bMax]) {
+
+  const aCenter =
+    (aMin + aMax) / 2;
+
+  const bCenter =
+    (bMin + bMax) / 2;
+
+
+  const diff =
+    Math.abs(aCenter - bCenter);
+
+
+  const centerScore =
+    Math.max(
+      0,
+      100 - diff * 20
+    );
+
+
+  const overlap =
+    Math.max(
+      0,
+      Math.min(aMax, bMax)
+      -
+      Math.max(aMin, bMin)
+    );
+
+
+  const union =
+    Math.max(aMax, bMax)
+    -
+    Math.min(aMin, bMin);
+
+
+  const overlapScore =
+    union > 0
+      ? (overlap / union) * 100
+      : 100;
+
+
+  return (
+    centerScore * 0.5
+    +
+    overlapScore * 0.5
+  );
+}
+
+
+function sleepScore(a, b) {
+  return rangeScore(
+    a.sleepRange,
+    b.sleepRange
+  );
+}
+
+
+// ==============================
+// 교류 / 소음
+// ==============================
+
+function levelDiffScore(aValue, bValue) {
+
+  const diff =
+    Math.abs(aValue - bValue);
+
+  return (
+    100
+    -
+    (diff / 4) * 100
+  );
+}
+
+
+// ==============================
+// 예산
+// ==============================
 
 function budgetRawScore(a, b) {
-  if (rangesOverlap(a.rentRange, b.rentRange)) return 15;
-  const rentGap = rangeGap(a.rentRange, b.rentRange);
-  return Math.max(0, 15 - (rentGap / 5) * 3);
+
+  if (
+    rangesOverlap(
+      a.rentRange,
+      b.rentRange
+    )
+  ) {
+    return 15;
+  }
+
+
+  const gap =
+    rangeGap(
+      a.rentRange,
+      b.rentRange
+    );
+
+
+  return Math.max(
+    0,
+    15 - (gap / 5) * 3
+  );
 }
+
 
 function budgetScore(a, b) {
-  return (budgetRawScore(a, b) / 15) * 100;
+  return (
+    budgetRawScore(a, b)
+    /
+    15
+  )
+  *
+  100;
 }
 
+
+// ==============================
+// 항목별 점수
+// ==============================
+
 function computeBreakdown(a, b) {
+
   return {
-    smoking: smokingScore(a, b),
-    sleep: sleepScore(a, b),
-    social: levelDiffScore(a.socialLevel, b.socialLevel),
-    noise: levelDiffScore(a.noiseLevel, b.noiseLevel),
-    region: regionScore(a, b),
-    budget: budgetScore(a, b),
+
+    smoking:
+      smokingScore(a, b),
+
+    sleep:
+      sleepScore(a, b),
+
+    social:
+      levelDiffScore(
+        a.socialLevel,
+        b.socialLevel
+      ),
+
+    noise:
+      levelDiffScore(
+        a.noiseLevel,
+        b.noiseLevel
+      ),
+
+    region:
+      regionScore(a, b),
+
+    budget:
+      budgetScore(a, b),
+
   };
 }
 
-// priorities(1~3순위) 기준 25/20/15%, 나머지 항목은 잔여 %를 균등 배분.
-function computeWeights(priorities, fieldKeys = FIELD_KEYS) {
-  const assigned = new Map();
-  priorities.forEach((key, i) => assigned.set(key, PRIORITY_WEIGHTS[i]));
 
-  const assignedTotal = [...assigned.values()].reduce((sum, w) => sum + w, 0);
-  const remainingKeys = fieldKeys.filter((key) => !assigned.has(key));
-  const remainingEach = remainingKeys.length > 0 ? (100 - assignedTotal) / remainingKeys.length : 0;
+// ==============================
+// 가중치
+// ==============================
+
+function computeWeights(
+  priorities,
+  fieldKeys = FIELD_KEYS
+) {
+
+  const assigned =
+    new Map();
+
+
+  priorities.forEach(
+    (key, i) => {
+
+      if (
+        fieldKeys.includes(key) &&
+        i < PRIORITY_WEIGHTS.length
+      ) {
+        assigned.set(
+          key,
+          PRIORITY_WEIGHTS[i]
+        );
+      }
+
+    }
+  );
+
+
+  const assignedTotal =
+    [...assigned.values()]
+      .reduce(
+        (sum, weight) =>
+          sum + weight,
+        0
+      );
+
+
+  const remainingKeys =
+    fieldKeys.filter(
+      (key) =>
+        !assigned.has(key)
+    );
+
+
+  const remainingEach =
+    remainingKeys.length > 0
+      ? (
+          100
+          -
+          assignedTotal
+        )
+        /
+        remainingKeys.length
+      : 0;
+
 
   const weights = {};
-  for (const key of fieldKeys) {
-    weights[key] = assigned.has(key) ? assigned.get(key) : remainingEach;
-  }
+
+
+  fieldKeys.forEach((key) => {
+
+    weights[key] =
+      assigned.has(key)
+        ? assigned.get(key)
+        : remainingEach;
+
+  });
+
+
   return weights;
 }
 
-function weightedScore(breakdown, weights) {
-  const total = FIELD_KEYS.reduce((sum, key) => sum + breakdown[key] * (weights[key] / 100), 0);
+
+// ==============================
+// 최종 점수
+// ==============================
+
+function weightedScore(
+  breakdown,
+  weights
+) {
+
+  const total =
+    FIELD_KEYS.reduce(
+      (sum, key) => {
+
+        return (
+          sum
+          +
+          breakdown[key]
+          *
+          (
+            weights[key]
+            /
+            100
+          )
+        );
+
+      },
+      0
+    );
+
+
   return Math.round(total);
 }
 
-function roundBreakdown(breakdown) {
+
+function roundBreakdown(
+  breakdown
+) {
+
   const rounded = {};
-  for (const key of FIELD_KEYS) rounded[key] = Math.round(breakdown[key]);
+
+
+  for (
+    const key
+    of FIELD_KEYS
+  ) {
+
+    rounded[key] =
+      Math.round(
+        breakdown[key]
+      );
+
+  }
+
+
   return rounded;
 }
 
-// 상대(seed user)가 자기 자신의 priorities를 갖고 있지 않으면
-// 일단 나(myInput)의 priorities를 그대로 대입해 "theirs" 점수를 근사한다.
-// → B/C 쪽에서 seed user별 priorities를 채워주기 전까지의 임시 처리.
-function getMatches(myInput, priorities, seedUsers) {
-  const myWeights = computeWeights(priorities);
 
-  const results = seedUsers
-    .filter((candidate) => passesHardFilter(myInput, candidate))
-    .map((candidate) => {
-      const rawBreakdown = computeBreakdown(myInput, candidate);
-      const breakdown = roundBreakdown(rawBreakdown);
+// ==============================
+// 매칭
+// ==============================
 
-      const mine = weightedScore(rawBreakdown, myWeights);
-      const theirWeights = computeWeights(candidate.priorities ?? priorities);
-      const theirs = weightedScore(rawBreakdown, theirWeights);
+function getMatches(
+  myInput,
+  priorities,
+  seedUsers
+) {
 
-      return {
-        userId: candidate.userId,
-        finalScore: mine,
-        breakdown,
-        perspective: { mine, theirs },
-      };
-    })
-    .sort((a, b) => b.finalScore - a.finalScore);
+  const myWeights =
+    computeWeights(
+      priorities
+    );
+
+
+  const results =
+    seedUsers
+
+      .filter(
+        (candidate) =>
+          passesHardFilter(
+            myInput,
+            candidate
+          )
+      )
+
+      .map(
+        (candidate) => {
+
+          const rawBreakdown =
+            computeBreakdown(
+              myInput,
+              candidate
+            );
+
+
+          const breakdown =
+            roundBreakdown(
+              rawBreakdown
+            );
+
+
+          const mine =
+            weightedScore(
+              rawBreakdown,
+              myWeights
+            );
+
+
+          const theirWeights =
+            computeWeights(
+              candidate.priorities
+              ??
+              priorities
+            );
+
+
+          const theirs =
+            weightedScore(
+              rawBreakdown,
+              theirWeights
+            );
+
+
+          return {
+
+            userId:
+              candidate.userId,
+
+            finalScore:
+              mine,
+
+            breakdown,
+
+            perspective: {
+              mine,
+              theirs,
+            },
+
+          };
+
+        }
+      )
+
+      .sort(
+        (a, b) =>
+          b.finalScore
+          -
+          a.finalScore
+      );
+
 
   return results;
 }
+
+
+// ==============================
+// export
+// ==============================
 
 export {
   getMatches,

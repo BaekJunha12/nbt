@@ -1,3 +1,8 @@
+import { getMatches } from "./src/matching.js";
+import { seedUsers } from "./seedUsers.js";
+
+const seedUsersById = new Map(seedUsers.map((user) => [user.userId, user]));
+
 let currentPage = 1;
 
 
@@ -745,7 +750,7 @@ function updateSleepTime() {
 
 
     profileData.sleepStart =
-        convertShiftedTime(
+        toExtendedHour(
             hour,
             minute
         );
@@ -762,16 +767,22 @@ function updateSleepTime() {
 }
 
 
-function convertShiftedTime(
+// seedUsers.js의 sleepRange 표기(자정 이후는 24를 더해 25시, 26시 식으로 표기)에 맞춘 변환.
+// 예: 23:00 -> 23, 01:00 -> 25
+function toExtendedHour(
     hour,
     minute
 ) {
 
+    const extendedHour =
+        hour < 12
+            ? hour + 24
+            : hour;
+
     return (
-        (hour + 12) % 24
-    )
-    +
-    minute / 60;
+        extendedHour
+        + minute / 60
+    );
 }
 
 
@@ -1007,113 +1018,135 @@ function validateSmokingPreference() {
 
 
 // ========================================
-// 추천 테스트 데이터
-// 백엔드 통합 전 UI 확인용
+// profileData -> matching.js 입력 형식 변환
 // ========================================
 
-const recommendationProfiles = [
+function genderToEn(gender) {
 
-    {
-        name: "김민수",
-
-        gender: "남성",
-
-        age: 22,
-
-        score: 92,
-
-        region: "성북구",
-
-        budget: "50~70만원",
-
-        stay: "6~12개월",
-
-        social: "4 / 5",
-
-        noise: "2 / 5",
-
-        smoking: "비흡연",
-
-        reasons: [
-
-            "희망 지역이 겹쳐요.",
-
-            "생활 패턴이 비슷해요.",
-
-            "교류 성향이 잘 맞아요."
-
-        ]
-    },
+    return gender === "남"
+        ? "male"
+        : "female";
+}
 
 
-    {
-        name: "임도현",
+function preferredGenderToArray(preferredGender) {
 
-        gender: "남성",
+    if (preferredGender === "상관없음") {
 
-        age: 23,
+        return ["male", "female"];
 
-        score: 86,
-
-        region: "성북구",
-
-        budget: "55~75만원",
-
-        stay: "6~18개월",
-
-        social: "3 / 5",
-
-        noise: "2 / 5",
-
-        smoking: "비흡연",
-
-        reasons: [
-
-            "희망 예산 범위가 비슷해요.",
-
-            "소음에 대한 성향이 비슷해요.",
-
-            "수면 시간이 비슷해요."
-
-        ]
-    },
-
-
-    {
-        name: "한예진",
-
-        gender: "여성",
-
-        age: 24,
-
-        score: 79,
-
-        region: "광진구",
-
-        budget: "60~85만원",
-
-        stay: "6~18개월",
-
-        social: "3 / 5",
-
-        noise: "3 / 5",
-
-        smoking: "비흡연",
-
-        reasons: [
-
-            "거주 희망 기간이 겹쳐요.",
-
-            "교류 성향 차이가 크지 않아요.",
-
-            "흡연 조건이 잘 맞아요."
-
-        ]
     }
 
-];
+
+    return [genderToEn(preferredGender)];
+}
 
 
+function calculateAge(birthDateStr) {
+
+    const birth = new Date(birthDateStr);
+    const today = new Date();
+
+    let age =
+        today.getFullYear()
+        - birth.getFullYear();
+
+
+    const beforeBirthday =
+        today.getMonth() < birth.getMonth()
+        ||
+        (
+            today.getMonth() === birth.getMonth()
+            &&
+            today.getDate() < birth.getDate()
+        );
+
+
+    if (beforeBirthday) {
+
+        age -= 1;
+
+    }
+
+
+    return age;
+}
+
+
+function buildMyInput() {
+
+    return {
+
+        gender: genderToEn(profileData.gender),
+
+        preferredGender:
+            preferredGenderToArray(
+                profileData.preferredGender
+            ),
+
+        age: calculateAge(profileData.birthDate),
+
+        ageMin: profileData.preferredAgeMin,
+        ageMax: profileData.preferredAgeMax,
+
+        preferredDistricts: [
+
+            profileData.regionFirst,
+            profileData.regionSecond,
+            profileData.regionThird
+
+        ].filter(Boolean),
+
+        isSmoking: profileData.smoking,
+        smokingTolerance: profileData.smokingTolerance,
+
+        sleepRange: [
+
+            profileData.sleepStart,
+            profileData.sleepEnd
+
+        ],
+
+        noiseLevel: profileData.noiseSensitivity,
+        socialLevel: profileData.socialLevel,
+
+        rentRange: [
+
+            profileData.budgetMin,
+            profileData.budgetMax
+
+        ]
+
+    };
+}
+
+
+// ========================================
+// 추천 이유 문구
+// ========================================
+
+const REASON_LABELS = {
+
+    smoking: "흡연 성향이 잘 맞아요.",
+    sleep: "수면 시간대가 비슷해요.",
+    social: "교류 희망 정도가 비슷해요.",
+    noise: "소음 민감도가 비슷해요.",
+    region: "희망 지역이 겹쳐요.",
+    budget: "희망 예산이 비슷해요."
+
+};
+
+
+function buildReasons(breakdown) {
+
+    return Object.entries(breakdown)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([key]) => REASON_LABELS[key]);
+}
+
+
+let matchResults = [];
 let recommendationIndex = 0;
 
 
@@ -1132,6 +1165,50 @@ function finishSurvey() {
     );
 
 
+    const myInput = buildMyInput();
+
+    // 우선순위(1~3순위) 선택 화면이 아직 없어서 전 항목 동일 가중치로 계산.
+    const priorities = [];
+
+    let results =
+        getMatches(myInput, priorities, seedUsers);
+
+
+    // gender/age/region은 matching.js에서 항상 하드필터로 처리됨.
+    // budget/stay는 matching.js가 소프트로만 처리하므로, 체크박스가
+    // 켜져 있으면 여기서 추가로 걸러낸다.
+    if (profileData.budgetHardFilter) {
+
+        results =
+            results.filter(
+                (result) => result.breakdown.budget === 100
+            );
+
+    }
+
+
+    if (profileData.stayHardFilter) {
+
+        results =
+            results.filter((result) => {
+
+                const user =
+                    seedUsersById.get(result.userId);
+
+                return (
+                    user.stayDuration >= profileData.stayMin
+                    &&
+                    user.stayDuration <= profileData.stayMax
+                );
+
+            });
+
+    }
+
+
+    matchResults = results;
+
+
     recommendationIndex = 0;
 
 
@@ -1148,70 +1225,104 @@ function finishSurvey() {
 
 function renderRecommendation() {
 
-    const profile =
-        recommendationProfiles[
-            recommendationIndex
-        ];
+    const profileCard =
+        document.getElementById("profileCard");
+
+    const arrows =
+        document.querySelectorAll(".profile-arrow");
+
+
+    if (matchResults.length === 0) {
+
+        profileCard.style.display = "none";
+
+        arrows.forEach((arrow) => {
+            arrow.style.display = "none";
+        });
+
+
+        document.getElementById(
+            "profileCounter"
+        ).textContent =
+            "조건에 맞는 추천 결과가 없어요";
+
+
+        return;
+    }
+
+
+    profileCard.style.display = "";
+
+    arrows.forEach((arrow) => {
+        arrow.style.display = "";
+    });
+
+
+    const result =
+        matchResults[recommendationIndex];
+
+    const user =
+        seedUsersById.get(result.userId);
 
 
     document.getElementById(
         "cardName"
     ).textContent =
-        profile.name;
+        user.name;
 
 
     document.getElementById(
         "cardBasicInfo"
     ).textContent =
-        `${profile.gender} · ${profile.age}세`;
+        `${user.gender === "male" ? "남성" : "여성"} · ${user.age}세`;
 
 
     document.getElementById(
         "cardScore"
     ).textContent =
-        profile.score;
+        result.finalScore;
 
 
     document.getElementById(
         "matchProgressFill"
     ).style.width =
-        `${profile.score}%`;
+        `${result.finalScore}%`;
 
 
     document.getElementById(
         "cardRegion"
     ).textContent =
-        profile.region;
+        user.preferredDistricts.join(" · ");
 
 
     document.getElementById(
         "cardBudget"
     ).textContent =
-        profile.budget;
+        `${user.rentRange[0]}~${user.rentRange[1]}만원`;
 
 
     document.getElementById(
         "cardStay"
     ).textContent =
-        profile.stay;
+        formatStay(user.stayDuration);
 
 
     document.getElementById(
         "cardSocial"
     ).textContent =
-        profile.social;
+        `${user.socialLevel} / 5`;
 
 
     document.getElementById(
         "cardNoise"
     ).textContent =
-        profile.noise;
+        `${user.noiseLevel} / 5`;
 
 
     document.getElementById(
         "cardSmoking"
     ).textContent =
-        profile.smoking;
+        user.isSmoking ? "흡연" : "비흡연";
 
 
     const reasonList =
@@ -1223,7 +1334,7 @@ function renderRecommendation() {
     reasonList.innerHTML = "";
 
 
-    profile.reasons.forEach(
+    buildReasons(result.breakdown).forEach(
         (reason) => {
 
             const li =
@@ -1247,7 +1358,7 @@ function renderRecommendation() {
     document.getElementById(
         "profileCounter"
     ).textContent =
-        `${recommendationIndex + 1} / ${recommendationProfiles.length}`;
+        `${recommendationIndex + 1} / ${matchResults.length}`;
 }
 
 
@@ -1262,7 +1373,7 @@ function nextRecommendation() {
 
     if (
         recommendationIndex
-        >= recommendationProfiles.length
+        >= matchResults.length
     ) {
 
         recommendationIndex = 0;
@@ -1288,7 +1399,7 @@ function previousRecommendation() {
     ) {
 
         recommendationIndex =
-            recommendationProfiles.length
+            matchResults.length
             - 1;
 
     }
@@ -1309,3 +1420,24 @@ updateStayRange();
 updateBudgetRange();
 
 updateAgeRange();
+
+
+// type="module"에서는 함수가 자동으로 window에 노출되지 않으므로,
+// index.html의 inline onclick/onchange 핸들러가 찾을 수 있도록 명시적으로 등록.
+Object.assign(window, {
+
+    goToPage,
+    selectGender,
+    validateBirthDate,
+    validateRegions,
+    validateSocial,
+    validateNoise,
+    updateSleepTime,
+    selectSmoking,
+    selectPreferredGender,
+    validateSmokingPreference,
+    finishSurvey,
+    previousRecommendation,
+    nextRecommendation
+
+});

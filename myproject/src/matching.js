@@ -76,7 +76,7 @@ function regionScore(a, b) {
   return (regionRawScore(a, b) / 15) * 100;
 }
 
-// 월세(rentRange)/보증금(depositRange) 둘 다 겹치면 만점. 아니면 월세 격차로 감점(하드필터 없음).
+// 월세(rentRange)가 겹치면 만점. 아니면 격차로 감점(하드필터 없음).
 function rangesOverlap([aMin, aMax], [bMin, bMax]) {
   return Math.min(aMax, bMax) - Math.max(aMin, bMin) > 0;
 }
@@ -86,8 +86,7 @@ function rangeGap([aMin, aMax], [bMin, bMax]) {
 }
 
 function budgetRawScore(a, b) {
-  const bothOverlap = rangesOverlap(a.rentRange, b.rentRange) && rangesOverlap(a.depositRange, b.depositRange);
-  if (bothOverlap) return 15;
+  if (rangesOverlap(a.rentRange, b.rentRange)) return 15;
   const rentGap = rangeGap(a.rentRange, b.rentRange);
   return Math.max(0, 15 - (rentGap / 5) * 3);
 }

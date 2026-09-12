@@ -18,7 +18,6 @@ const dummyMe = {
   socialLevel: 4,
   stayDuration: 6,
   rentRange: [40, 60],
-  depositRange: [500, 1000],
   intro: "",
 };
 
@@ -38,7 +37,6 @@ const dummyCandidate = {
   socialLevel: 4,
   stayDuration: 12,
   rentRange: [50, 70],
-  depositRange: [500, 1000],
   intro: "고려대 재학 중입니다! 밤에 조용히 잘 자는 성향이고 규칙적인 라이프스타일을 선호해요.",
 };
 
@@ -115,16 +113,16 @@ test("겹치는 지역이 하나도 없으면 하드필터에서 제외된다", 
   assert.equal(passesHardFilter(a, b), false);
 });
 
-test("월세·보증금 범위가 둘 다 겹치면 budget 점수가 100점이다", () => {
-  const a = { ...dummyMe, rentRange: [40, 60], depositRange: [500, 1000] };
-  const b = { ...dummyCandidate, rentRange: [50, 70], depositRange: [800, 1200] };
+test("월세 범위가 겹치면 budget 점수가 100점이다", () => {
+  const a = { ...dummyMe, rentRange: [40, 60] };
+  const b = { ...dummyCandidate, rentRange: [50, 70] };
   const { budget } = computeBreakdown(a, b);
   assert.equal(budget, 100);
 });
 
-test("범위가 안 겹치면 월세 격차만큼 budget 점수가 깎인다", () => {
-  const a = { ...dummyMe, rentRange: [40, 50], depositRange: [500, 1000] };
-  const b = { ...dummyCandidate, rentRange: [60, 70], depositRange: [500, 1000] };
+test("월세 범위가 안 겹치면 격차만큼 budget 점수가 깎인다", () => {
+  const a = { ...dummyMe, rentRange: [40, 50] };
+  const b = { ...dummyCandidate, rentRange: [60, 70] };
   // rentGap = 60 - 50 = 10 -> raw = 15 - (10/5)*3 = 9 -> 9/15*100 = 60
   const { budget } = computeBreakdown(a, b);
   assert.equal(budget, 60);

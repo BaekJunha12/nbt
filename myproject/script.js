@@ -149,12 +149,46 @@ function selectGender(
 // 생년월일
 // ========================================
 
+// 로컬 기준 오늘 날짜를 "YYYY-MM-DD"로 반환 (toISOString은 UTC라 자정 근처에 하루 밀릴 수 있음).
+function getTodayDateString() {
+
+    const today = new Date();
+
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+}
+
+
 function validateBirthDate() {
 
-    const value =
+    const input =
         document.getElementById(
             "birthDate"
-        ).value;
+        );
+
+    const value = input.value;
+
+    const isFutureDate =
+        value
+        &&
+        value > getTodayDateString();
+
+
+    if (isFutureDate) {
+
+        input.value = "";
+
+        profileData.birthDate = null;
+
+        document.getElementById(
+            "birthNext"
+        ).disabled = true;
+
+        return;
+    }
 
 
     profileData.birthDate = value;
@@ -1857,6 +1891,8 @@ chatInput.addEventListener(
 // ========================================
 
 createRegionOptions();
+
+document.getElementById("birthDate").max = getTodayDateString();
 
 updateStayRange();
 

@@ -110,6 +110,39 @@ h1 {
    첫 화면
 ======================================== */
 
+.house-visual {
+    position: relative;
+
+    display: inline-flex;
+}
+
+
+.brand-mark {
+    position: absolute;
+    top: 1%;
+    left: 50%;
+
+    transform: translateX(-50%);
+
+    color: var(--primary);
+
+    font-size: clamp(40px, 10vw, 68px);
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: 0.02em;
+
+    white-space: nowrap;
+
+    text-shadow:
+        0 0 3px #ffffff,
+        0 0 8px #ffffff,
+        0 0 16px #ffffff,
+        0 4px 12px rgba(0, 0, 0, 0.18);
+
+    pointer-events: none;
+}
+
+
 .welcome-container {
     width: 100%;
     max-width: 650px;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getMatches, passesHardFilter, computeWeights } from "./matching.js";
+import { getMatches, passesHardFilter, computeBreakdown, computeWeights } from "./matching.js";
 
 const dummyMe = {
   userId: "user_m00",
@@ -17,6 +17,8 @@ const dummyMe = {
   noiseLevel: 5,
   socialLevel: 4,
   stayDuration: 6,
+  rentRange: [40, 60],
+  depositRange: [500, 1000],
   intro: "",
 };
 
@@ -35,6 +37,8 @@ const dummyCandidate = {
   noiseLevel: 2,
   socialLevel: 4,
   stayDuration: 12,
+  rentRange: [50, 70],
+  depositRange: [500, 1000],
   intro: "고려대 재학 중입니다! 밤에 조용히 잘 자는 성향이고 규칙적인 라이프스타일을 선호해요.",
 };
 
@@ -45,7 +49,10 @@ test("seed 데이터 형식(user_m01)으로 매칭 결과가 나온다", () => {
   assert.equal(result.userId, "user_m01");
   assert.equal(result.finalScore, result.perspective.mine);
   assert.ok(result.finalScore >= 0 && result.finalScore <= 100);
-  assert.deepEqual(Object.keys(result.breakdown).sort(), ["noise", "sleep", "smoking", "social"]);
+  assert.deepEqual(
+    Object.keys(result.breakdown).sort(),
+    ["budget", "noise", "region", "sleep", "smoking", "social"]
+  );
 });
 
 test("가중치는 항상 합이 100이 된다", () => {
@@ -84,4 +91,41 @@ test("동일한 생활패턴끼리는 항목별 점수가 100에 가깝다", () 
   assert.equal(result.breakdown.sleep, 100);
   assert.equal(result.breakdown.social, 100);
   assert.equal(result.breakdown.noise, 100);
+  assert.equal(result.breakdown.region, 100);
+  assert.equal(result.breakdown.budget, 100);
+});
+
+test("1지망끼리 겹치는 지역이 있으면 region 점수가 100점이다", () => {
+  const a = { ...dummyMe, preferredDistricts: ["성북구", "동대문구", "종로구"] };
+  const b = { ...dummyCandidate, preferredDistricts: ["성북구", "노원구", "강북구"] };
+  const { region } = computeBreakdown(a, b);
+  assert.equal(region, 100);
+});
+
+test("2지망↔3지망처럼 낮은 순위끼리만 겹치면 region 점수가 부분 점수(6/15*100)다", () => {
+  const a = { ...dummyMe, preferredDistricts: ["성북구", "동대문구", "종로구"] };
+  const b = { ...dummyCandidate, preferredDistricts: ["노원구", "강북구", "동대문구"] };
+  const { region } = computeBreakdown(a, b);
+  assert.equal(region, Math.round((6 / 15) * 100 * 100) / 100);
+});
+
+test("겹치는 지역이 하나도 없으면 하드필터에서 제외된다", () => {
+  const a = { ...dummyMe, preferredDistricts: ["성북구", "동대문구", "종로구"] };
+  const b = { ...dummyCandidate, preferredDistricts: ["노원구", "강북구", "관악구"] };
+  assert.equal(passesHardFilter(a, b), false);
+});
+
+test("월세·보증금 범위가 둘 다 겹치면 budget 점수가 100점이다", () => {
+  const a = { ...dummyMe, rentRange: [40, 60], depositRange: [500, 1000] };
+  const b = { ...dummyCandidate, rentRange: [50, 70], depositRange: [800, 1200] };
+  const { budget } = computeBreakdown(a, b);
+  assert.equal(budget, 100);
+});
+
+test("범위가 안 겹치면 월세 격차만큼 budget 점수가 깎인다", () => {
+  const a = { ...dummyMe, rentRange: [40, 50], depositRange: [500, 1000] };
+  const b = { ...dummyCandidate, rentRange: [60, 70], depositRange: [500, 1000] };
+  // rentGap = 60 - 50 = 10 -> raw = 15 - (10/5)*3 = 9 -> 9/15*100 = 60
+  const { budget } = computeBreakdown(a, b);
+  assert.equal(budget, 60);
 });

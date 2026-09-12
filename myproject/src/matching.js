@@ -2,7 +2,7 @@
 // 필드명은 C의 seed 데이터 형식(userId, preferredGender, ageMin/ageMax,
 // isSmoking, sleepRange, noiseLevel, socialLevel 등)에 맞춤.
 
-const FIELD_KEYS = ["smoking", "sleep", "social", "noise"];
+const FIELD_KEYS = ["smoking", "sleep", "social", "noise", "region", "budget"];
 const PRIORITY_WEIGHTS = [25, 20, 15]; // 1~3순위 가중치(%)
 
 function inRange(value, min, max) {
@@ -14,6 +14,7 @@ function passesHardFilter(a, b) {
   if (!inRange(b.age, a.ageMin, a.ageMax) || !inRange(a.age, b.ageMin, b.ageMax)) return false;
   if (b.isSmoking && a.smokingTolerance === 0) return false;
   if (a.isSmoking && b.smokingTolerance === 0) return false;
+  if (regionRawScore(a, b) === 0) return false;
   return true;
 }
 
@@ -47,12 +48,62 @@ function levelDiffScore(aValue, bValue) {
   return 100 - (diff / 4) * 100;
 }
 
+// preferredDistricts는 순서대로 1~3지망. 겹치는 지역 중 가장 점수가 높은
+// (내 순위, 상대 순위) 조합을 채택 — 순서 무관 대칭 점수표, 15점 만점.
+const REGION_SCORE_TABLE = {
+  "1-1": 15,
+  "1-2": 10,
+  "1-3": 7,
+  "2-2": 8,
+  "2-3": 6,
+  "3-3": 5,
+};
+
+function regionRawScore(a, b) {
+  let best = 0;
+  a.preferredDistricts.forEach((districtA, i) => {
+    b.preferredDistricts.forEach((districtB, j) => {
+      if (districtA !== districtB) return;
+      const ranks = [i + 1, j + 1].sort((x, y) => x - y);
+      const score = REGION_SCORE_TABLE[ranks.join("-")] ?? 0;
+      if (score > best) best = score;
+    });
+  });
+  return best;
+}
+
+function regionScore(a, b) {
+  return (regionRawScore(a, b) / 15) * 100;
+}
+
+// 월세(rentRange)/보증금(depositRange) 둘 다 겹치면 만점. 아니면 월세 격차로 감점(하드필터 없음).
+function rangesOverlap([aMin, aMax], [bMin, bMax]) {
+  return Math.min(aMax, bMax) - Math.max(aMin, bMin) > 0;
+}
+
+function rangeGap([aMin, aMax], [bMin, bMax]) {
+  return Math.max(0, Math.max(aMin, bMin) - Math.min(aMax, bMax));
+}
+
+function budgetRawScore(a, b) {
+  const bothOverlap = rangesOverlap(a.rentRange, b.rentRange) && rangesOverlap(a.depositRange, b.depositRange);
+  if (bothOverlap) return 15;
+  const rentGap = rangeGap(a.rentRange, b.rentRange);
+  return Math.max(0, 15 - (rentGap / 5) * 3);
+}
+
+function budgetScore(a, b) {
+  return (budgetRawScore(a, b) / 15) * 100;
+}
+
 function computeBreakdown(a, b) {
   return {
     smoking: smokingScore(a, b),
     sleep: sleepScore(a, b),
     social: levelDiffScore(a.socialLevel, b.socialLevel),
     noise: levelDiffScore(a.noiseLevel, b.noiseLevel),
+    region: regionScore(a, b),
+    budget: budgetScore(a, b),
   };
 }
 

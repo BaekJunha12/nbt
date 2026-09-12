@@ -1146,7 +1146,56 @@ function buildReasons(breakdown) {
 }
 
 
+// matching.js의 passesHardFilter 자체는 통과/거절만 알려주고 "왜" 걸렸는지는 안 알려줌.
+// 결과가 0명일 때 어떤 조건 때문인지 바로 보여주기 위한 진단용 카운터(실제 매칭 로직과는 무관,
+// matching.js의 하드필터 4가지 조건을 참고용으로 그대로 옮겨 센 것 — matching.js가 바뀌면 같이 확인 필요).
+function diagnoseHardFilter(myInput, users) {
+
+    const counts = {
+        gender: 0,
+        age: 0,
+        smoking: 0,
+        region: 0
+    };
+
+
+    users.forEach((candidate) => {
+
+        const genderOk =
+            myInput.preferredGender.includes(candidate.gender)
+            &&
+            candidate.preferredGender.includes(myInput.gender);
+
+        const ageOk =
+            candidate.age >= myInput.ageMin && candidate.age <= myInput.ageMax
+            &&
+            myInput.age >= candidate.ageMin && myInput.age <= candidate.ageMax;
+
+        const smokingOk =
+            !(candidate.isSmoking && myInput.smokingTolerance === 0)
+            &&
+            !(myInput.isSmoking && candidate.smokingTolerance === 0);
+
+        const regionOk =
+            myInput.preferredDistricts.some(
+                (district) => candidate.preferredDistricts.includes(district)
+            );
+
+
+        if (genderOk) counts.gender++;
+        if (ageOk) counts.age++;
+        if (smokingOk) counts.smoking++;
+        if (regionOk) counts.region++;
+
+    });
+
+
+    return counts;
+}
+
+
 let matchResults = [];
+let matchDiagnosis = null;
 let recommendationIndex = 0;
 
 
@@ -1208,6 +1257,14 @@ function finishSurvey() {
 
     matchResults = results;
 
+    matchDiagnosis =
+        results.length === 0
+            ? diagnoseHardFilter(myInput, seedUsers)
+            : null;
+
+    console.log("변환된 입력값(myInput)", myInput);
+    console.log("매칭 결과", results);
+
 
     recommendationIndex = 0;
 
@@ -1241,10 +1298,20 @@ function renderRecommendation() {
         });
 
 
+        const counterText =
+            matchDiagnosis
+                ? `조건에 맞는 추천 결과가 없어요 `
+                    + `(성별 ${matchDiagnosis.gender}/${seedUsers.length}, `
+                    + `나이 ${matchDiagnosis.age}/${seedUsers.length}, `
+                    + `흡연 ${matchDiagnosis.smoking}/${seedUsers.length}, `
+                    + `지역 ${matchDiagnosis.region}/${seedUsers.length} 통과)`
+                : "조건에 맞는 추천 결과가 없어요";
+
+
         document.getElementById(
             "profileCounter"
         ).textContent =
-            "조건에 맞는 추천 결과가 없어요";
+            counterText;
 
 
         return;

@@ -1597,6 +1597,32 @@ function saveMessages(userId, messages) {
     }
 }
 
+// 페이지를 새로 실행할 때마다 이전 채팅 기록이 남지 않도록, localStorage에 저장된
+// nbt-chat- 키를 전부 지운다. (같은 실행 중에 보내고 받는 메시지 자체는 그대로 유지됨)
+function clearAllChatHistory() {
+    try {
+        const keysToRemove = [];
+
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+
+            if (key && key.startsWith("nbt-chat-")) {
+                keysToRemove.push(key);
+            }
+        }
+
+        keysToRemove.forEach(
+            (key) => localStorage.removeItem(key)
+        );
+    }
+    catch (error) {
+        console.error(
+            "채팅 기록을 초기화하지 못했습니다.",
+            error
+        );
+    }
+}
+
 function getCurrentRecommendedUser() {
     if (matchResults.length === 0) {
         return null;
@@ -1889,6 +1915,8 @@ chatInput.addEventListener(
 // ========================================
 // 초기 실행
 // ========================================
+
+clearAllChatHistory();
 
 createRegionOptions();
 
